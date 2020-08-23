@@ -1,0 +1,3 @@
+[submodule "urdf_model"]
+	path = urdf_model
+	url = https://gitlab.com/agh-integra/krocz-ce/czlap-czlap/urdf_model
