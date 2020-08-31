@@ -18,26 +18,26 @@ torque_tab = []
 maxForce = 15
 p.setJointMotorControl2(boxId, 3, controlMode=p.POSITION_CONTROL, force=maxForce, targetPosition=np.deg2rad(-45))
 p.setJointMotorControl2(boxId, 4, controlMode=p.POSITION_CONTROL, force=maxForce, targetPosition=np.deg2rad(90))
-p.setJointMotorControl2(boxId, 0, controlMode=p.POSITION_CONTROL, force=maxForce, targetPosition=np.deg2rad(0))
+p.setJointMotorControl2(boxId, 0, controlMode=p.POSITION_CONTROL, force=maxForce, targetPosition=np.deg2rad(5))
 
 p.setJointMotorControl2(boxId, 8, controlMode=p.POSITION_CONTROL, force=maxForce, targetPosition=np.deg2rad(-45))
 p.setJointMotorControl2(boxId, 9, controlMode=p.POSITION_CONTROL, force=maxForce, targetPosition=np.deg2rad(90))
-p.setJointMotorControl2(boxId, 5, controlMode=p.POSITION_CONTROL, force=maxForce, targetPosition=np.deg2rad(-0))
+p.setJointMotorControl2(boxId, 5, controlMode=p.POSITION_CONTROL, force=maxForce, targetPosition=np.deg2rad(-5))
 
 p.setJointMotorControl2(boxId, 13, controlMode=p.POSITION_CONTROL, force=maxForce, targetPosition=np.deg2rad(-45))
 p.setJointMotorControl2(boxId, 14, controlMode=p.POSITION_CONTROL, force=maxForce, targetPosition=np.deg2rad(90))
-p.setJointMotorControl2(boxId, 10, controlMode=p.POSITION_CONTROL, force=maxForce, targetPosition=np.deg2rad(0))
+p.setJointMotorControl2(boxId, 10, controlMode=p.POSITION_CONTROL, force=maxForce, targetPosition=np.deg2rad(5))
 
 p.setJointMotorControl2(boxId, 18, controlMode=p.POSITION_CONTROL, force=maxForce, targetPosition=np.deg2rad(-45))
 p.setJointMotorControl2(boxId, 19, controlMode=p.POSITION_CONTROL, force=maxForce, targetPosition=np.deg2rad(90))
-p.setJointMotorControl2(boxId, 15, controlMode=p.POSITION_CONTROL, force=maxForce, targetPosition=np.deg2rad(-0))
+p.setJointMotorControl2(boxId, 15, controlMode=p.POSITION_CONTROL, force=maxForce, targetPosition=np.deg2rad(-5))
 
 # p.enableJointForceTorqueSensor(boxId, 4)
 
 for i in range(p.getNumJoints(boxId)):
     print(p.getJointInfo(boxId, i), '\n')
 
-for i in range (10000):
+for i in range (100000):
     p.stepSimulation()
     # torque_tab.append(p.getJointState(boxId, 4)[2][3])
     time.sleep(1./240.)
