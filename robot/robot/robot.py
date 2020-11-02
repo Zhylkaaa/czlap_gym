@@ -13,8 +13,8 @@ class Robot:
         self._start_rpy = rpy
         self._robot_id = None
         self._robot_data = None
-        self._position_gains = [0.1 for _ in range(12)]
-        self._velocity_gains = [1.4 for _ in range(12)]
+        # self._position_gains = [0.2 for _ in range(12)]
+        # self._velocity_gains = [0.0001 for _ in range(12)]
 
         self._joints_array = [1,  3,  5,
                               7,  9,  11,
@@ -66,18 +66,27 @@ class Robot:
 
     def _setMimicJoints(self):
         joint_num_map = {'coxa':(1,0), 'femur':(3,2), 'tibia':(5,4)}
-        for i in range(0, 23, 6):
+        for i in range(4):
             for joint in ('coxa', 'femur', 'tibia'):
                 c = self._bc.createConstraint(parentBodyUniqueId=self._robot_id,
-                                            parentLinkIndex=joint_num_map[joint][0]+i,
+                                            parentLinkIndex=joint_num_map[joint][0]+i*6,
                                             childBodyUniqueId=self._robot_id,
-                                            childLinkIndex=joint_num_map[joint][1]+i,
+                                            childLinkIndex=joint_num_map[joint][1]+i*6,
                                             jointType=p.JOINT_GEAR,
                                             jointAxis=[1, 0, 0],
                                             parentFramePosition=[0, 0, 0],
                                             childFramePosition=[0, 0, 0])
-                gearRatio = -1 / self._robot_data[joint]['actuator']['gear_ratio']
-                self._bc.changeConstraint(c, gearRatio=gearRatio, maxForce=10000)
+                gear_ratio = 1 / self._robot_data[joint]['actuator']['gear_ratio']
+                if joint == 'coxa' and  i >= 2:
+                    gear_ratio *= -1
+                elif joint == 'femur':
+                    if i%2 == 0:
+                        gear_ratio *= -1
+                    if i >= 2:
+                        gear_ratio *= -1
+                elif joint == 'tibia' and i%2 == 0:
+                    gear_ratio *= -1
+                self._bc.changeConstraint(c, gearRatio=gear_ratio, maxForce=10000)
 
 
 
@@ -130,10 +139,10 @@ class Robot:
         self._bc.setJointMotorControlArray(bodyUniqueId=self._robot_id,
                                            jointIndices=self._joints_array,
                                            controlMode=self._control_mode,
-                                           targetPositions=remapped_target_positions,
-                                           targetVelocities=remapped_target_velocities,
-                                           positionGains=self._position_gains,
-                                           velocityGains=self._velocity_gains)
+                                           targetPositions=remapped_target_positions)
+                                        #    targetVelocities=remapped_target_velocities,
+                                        #    positionGains=self._position_gains)
+                                        #    velocityGains=self._velocity_gains)
 
 
     def resetPosition(self, target_position=None):
