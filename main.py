@@ -16,7 +16,7 @@ if __name__ == '__main__':
 
     client.setRealTimeSimulation(1)
     client.setGravity(0,0,-9.81)
+    # print(rob.max_vel_limits)
 
     while (1):
-        time.sleep(1./240.)
-        rob.getJointPosArray()
+        pass

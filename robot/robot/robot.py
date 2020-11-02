@@ -13,6 +13,8 @@ class Robot:
         self._start_rpy = rpy
         self._robot_id = None
         self._robot_data = None
+        self._position_gains = [0.1 for _ in range(12)]
+        self._velocity_gains = [1.4 for _ in range(12)]
 
         self._joints_array = [1,  3,  5,
                               7,  9,  11,
@@ -21,11 +23,9 @@ class Robot:
 
         self._control_mode = control_mode
         self._start_joint_pos = None
-        if start_pos == None:
-            self._start_joint_pos = []
-            for i in  range(4):
-                self._start_joint_pos += (0.0, np.pi/4,  np.pi/2)
-            self._start_joint_pos = np.array(self._start_joint_pos)
+        if start_pos is None:
+            self._start_joint_pos = np.array([0.0, np.pi/4,  np.pi/2]).reshape(3, 1)
+            self._start_joint_pos = (np.ones((4, 1)) * self._start_joint_pos.T).reshape(1, 12)[0]
         else:
             self._start_joint_pos = np.array(start_pos)
 
@@ -42,7 +42,7 @@ class Robot:
         self._resetActuatorJoints()
         self.resetPosition()
         self._setMimicJoints()
-        self.setJointAngleArray(self._start_joint_pos)
+        self.setJointArray(self._start_joint_pos, np.array([0 for _ in range(12)]))
 
 
 
@@ -65,39 +65,19 @@ class Robot:
 
 
     def _setMimicJoints(self):
+        joint_num_map = {'coxa':(1,0), 'femur':(3,2), 'tibia':(5,4)}
         for i in range(0, 23, 6):
-            c = self._bc.createConstraint(parentBodyUniqueId=self._robot_id,
-                                          parentLinkIndex=1+i,
-                                          childBodyUniqueId=self._robot_id,
-                                          childLinkIndex=0+i,
-                                          jointType=p.JOINT_GEAR,
-                                          jointAxis=[1, 0, 0],
-                                          parentFramePosition=[0, 0, 0],
-                                          childFramePosition=[0, 0, 0])
-            gearRatio = -1 / self._robot_data['coxa']['actuator']['gear_ratio']
-            self._bc.changeConstraint(c, gearRatio=gearRatio, maxForce=10000)
-
-            c = self._bc.createConstraint(parentBodyUniqueId=self._robot_id,
-                                          parentLinkIndex=3+i,
-                                          childBodyUniqueId=self._robot_id,
-                                          childLinkIndex=2+i,
-                                          jointType=p.JOINT_GEAR,
-                                          jointAxis=[1, 0, 0],
-                                          parentFramePosition=[0, 0, 0],
-                                          childFramePosition=[0, 0, 0])
-            gearRatio = -1 / self._robot_data['tibia']['actuator']['gear_ratio']
-            self._bc.changeConstraint(c, gearRatio=gearRatio, maxForce=10000)
-
-            c = self._bc.createConstraint(parentBodyUniqueId=self._robot_id,
-                                          parentLinkIndex=5+i,
-                                          childBodyUniqueId=self._robot_id,
-                                          childLinkIndex=4+i,
-                                          jointType=p.JOINT_GEAR,
-                                          jointAxis=[1, 0, 0],
-                                          parentFramePosition=[0, 0, 0],
-                                          childFramePosition=[0, 0, 0])
-            gearRatio = -1 / self._robot_data['femur']['actuator']['gear_ratio']
-            self._bc.changeConstraint(c, gearRatio=gearRatio, maxForce=10000)
+            for joint in ('coxa', 'femur', 'tibia'):
+                c = self._bc.createConstraint(parentBodyUniqueId=self._robot_id,
+                                            parentLinkIndex=joint_num_map[joint][0]+i,
+                                            childBodyUniqueId=self._robot_id,
+                                            childLinkIndex=joint_num_map[joint][1]+i,
+                                            jointType=p.JOINT_GEAR,
+                                            jointAxis=[1, 0, 0],
+                                            parentFramePosition=[0, 0, 0],
+                                            childFramePosition=[0, 0, 0])
+                gearRatio = -1 / self._robot_data[joint]['actuator']['gear_ratio']
+                self._bc.changeConstraint(c, gearRatio=gearRatio, maxForce=10000)
 
 
 
@@ -115,32 +95,50 @@ class Robot:
 
 
 
-    def getJointPosArray(self):
-        # TODO first elements of array contain joint position
+    def getJointPosVelArray(self):
         joint_states = self._bc.getJointStates(bodyUniqueId=self._robot_id,
                                                jointIndices=self._joints_array)
-        print(np.array(joint_states[0]))
-        print('\n\n\n')
-        return joint_states
+
+        joint_position = np.array(joint_states)[:,0]
+        joint_position[[1, 4]] = np.pi-joint_position[[1, 4]]
+        joint_position[[2, 3, 5, 8, 9, 11]] = -joint_position[[2, 3, 5, 8, 9, 11]]
+
+        joint_velocity = np.array(joint_states)[:,1]
+        joint_velocity[[1, 2, 3, 4, 5, 8, 9, 11]] = -joint_velocity[[1, 2, 3, 4, 5, 8, 9, 11]]
+
+        return np.concatenate((joint_position, joint_velocity), axis=0)
 
 
 
-    def setJointAngleArray(self, target_position):
-        assert np.shape(target_position) == np.shape(self._joints_array)
+    def setJointArray(self, target_positions, target_velocities=None):
+        assert np.shape(target_positions) == np.shape(self._joints_array)
 
-        remapped_target_position = np.copy(target_position)
-        remapped_target_position[[1, 4]] = np.pi-target_position[[1, 4]]
-        remapped_target_position[[2, 3, 5, 8, 9, 11]] = -target_position[[2, 3, 5, 8, 9, 11]]
+        remapped_target_positions = np.copy(target_positions)
+        remapped_target_positions[[1, 4]] = np.pi-target_positions[[1, 4]]
+        remapped_target_positions[[2, 3, 5, 8, 9, 11]] = -target_positions[[2, 3, 5, 8, 9, 11]]
+
+
+        remapped_target_velocities = None
+        if target_velocities is None:
+            remapped_target_velocities = self.max_vel_limits
+        else:
+            assert np.shape(target_velocities) == np.shape(self._joints_array)
+            remapped_target_velocities = np.copy(target_velocities)
+            remapped_target_velocities[[1, 2, 3, 4, 5, 8, 9, 11]] = -target_velocities[[1, 2, 3, 4, 5, 8, 9, 11]]
+
 
         self._bc.setJointMotorControlArray(bodyUniqueId=self._robot_id,
                                            jointIndices=self._joints_array,
                                            controlMode=self._control_mode,
-                                           targetPositions=remapped_target_position)
+                                           targetPositions=remapped_target_positions,
+                                           targetVelocities=remapped_target_velocities,
+                                           positionGains=self._position_gains,
+                                           velocityGains=self._velocity_gains)
 
 
     def resetPosition(self, target_position=None):
 
-        if target_position == None:
+        if target_position is None:
             target_position = self._start_joint_pos
 
         helper_target_positnion = np.copy(target_position)
@@ -162,3 +160,22 @@ class Robot:
         self._bc.resetBasePositionAndOrientation(bodyUniqueId=self._robot_id,
                                                  posObj=self._start_xyz,
                                                  ornObj=quaternion)
+
+    @property
+    def max_vel_limits(self):
+        joint_names = ['coxa', 'femur', 'tibia']
+        max_vel_array = np.array([self._robot_data[joint]['actuator']['velocity'] /
+                                  self._robot_data[joint]['actuator']['gear_ratio'] for joint in joint_names]).reshape(3,1)
+        return (np.ones((4, 1)) * max_vel_array.T).reshape(1, 12)[0]
+
+    @property
+    def joint_pos_limits(self):
+        joint_names = ['coxa', 'femur', 'tibia']
+        joitnt_limit_up = np.array([self._robot_data[joint]['joint']['limit']['upper'] for joint in joint_names]).reshape(3,1)
+        joitnt_limit_up = np.deg2rad(joitnt_limit_up)
+
+        joitnt_limit_low = np.array([self._robot_data[joint]['joint']['limit']['lower'] for joint in joint_names]).reshape(3,1)
+        joitnt_limit_low = np.deg2rad(joitnt_limit_low)
+
+        return np.array([(np.ones((4, 1)) * joitnt_limit_low).T.reshape(1, 12)[0],
+                         (np.ones((4, 1)) * joitnt_limit_up).T.reshape(1, 12)[0]])
