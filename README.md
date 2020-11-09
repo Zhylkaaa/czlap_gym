@@ -9,7 +9,7 @@ List of Contents:
 
 Installation:
 
-for now we recomend installing model in `dev` mode.
+for now we recommend installing model in `dev` mode.
 
 So, clone the repository and follow this steps:
 ```bash

@@ -5,31 +5,46 @@ import pybullet_utils.bullet_client as bc
 import numpy as np
 import matplotlib.pyplot as plt
 import os
-
-from czlap_the_robot.robot import Robot
+import torch
+from agent import TRPOAgent
+import gym
+import czlap_the_robot
+from policy import Policy
+import yaml
 
 if __name__ == '__main__':
 
-    client = bc.BulletClient(connection_mode=p.GUI)
-    client.setAdditionalSearchPath(pybullet_data.getDataPath())
-    client.loadURDF("plane.urdf", useMaximalCoordinates=True)
+    # TODO(1): refactor this block
+    with open('czlap_the_robot/urdf/config/props.yaml', 'r') as stream:
+        robot_config = yaml.safe_load(stream)
+    joint_names = ['coxa', 'femur', 'tibia']
+    joints_limit_up = np.array(
+        [robot_config[joint]['joint']['limit']['upper'] for joint in joint_names] * 4, dtype=np.float32)
+    joints_limit_up = np.deg2rad(joints_limit_up)
 
-    rob = Robot(client, 'czlap_the_robot/urdf/robot.urdf', 'czlap_the_robot/urdf/config/props.yaml',
-                (0., 0., 0.2), (0., 0., 0))
+    joints_limit_low = np.array(
+        [robot_config[joint]['joint']['limit']['lower'] for joint in joint_names] * 4, dtype=np.float32)
+    joints_limit_low = np.deg2rad(joints_limit_low)
+    # TODO(1): end of block
 
-    client.setGravity(0, 0, -9.81)
+    constraints = np.maximum(np.abs(joints_limit_low), np.abs(joints_limit_up))
 
-    T = np.arange(0, 2 * np.pi, 1. / 15)
-    joint_move = np.sin(T) * np.pi / 4
-    print(np.shape(joint_move))
+    nn = Policy(36, 256, 12, constraints)
 
-    i = 0
-    while (1):
-        client.stepSimulation()
-        time.sleep(1. / 240.)
-        joint_pos = np.array([joint_move[i], np.pi / 4 + joint_move[i], np.pi / 2 + joint_move[i]]).reshape(3, 1)
-        joint_pos = (np.ones((4, 1)) * joint_pos.T).reshape(1, 12)[0]
-        rob.set_joint_array(joint_pos)
-        i += 1
-        if i >= np.shape(joint_move)[0] - 1:
-            i = 0
+    agent = TRPOAgent(policy=nn)
+
+    agent.save_model("agent.pth")
+    agent.load_model("agent.pth")
+    agent.train('CzlapCzlap-v0', seed=0, batch_size=5000, iterations=10000,
+                max_episode_length=500, verbose=True)
+    agent.save_model("agent.pth")
+
+    """env = gym.make('CzlapCzlap-v0')
+    ob = env.reset()
+    while True:
+        action = agent(ob)
+        ob, _, done, _ = env.step(action)
+        env.render()
+        if done:
+            ob = env.reset()
+            time.sleep(1 / 30)"""

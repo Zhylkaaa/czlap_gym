@@ -6,6 +6,7 @@ import pybullet_data
 from pybullet_utils.bullet_client import BulletClient
 from typing import Tuple, Optional
 
+
 class Robot:
     """
     Wrapper on Czlap-Czlap PyBullet simulation
@@ -49,6 +50,7 @@ class Robot:
         self._props_path = props_path
         self._start_xyz = xyz
         self._start_rpy = rpy
+        self.joint_names = ['coxa', 'femur', 'tibia']
         self._robot_id = None
         self._robot_data = None
         # self._position_gains = [0.2 for _ in range(12)]
@@ -62,7 +64,7 @@ class Robot:
         self._control_mode = control_mode
         self._start_joint_pos = None
         if start_pos is None:
-            self._start_joint_pos = np.array([0.0, np.pi / 4, np.pi / 2]*4)
+            self._start_joint_pos = np.array([0.0, np.pi / 4, np.pi / 2] * 4)
         else:
             self._start_joint_pos = np.array(start_pos)
 
@@ -100,7 +102,7 @@ class Robot:
         """Have no fucking clue"""
         joint_num_map = {'coxa': (1, 0), 'femur': (3, 2), 'tibia': (5, 4)}
         for i in range(4):
-            for joint in ('coxa', 'femur', 'tibia'):
+            for joint in self.joint_names:
                 c = self._bc.createConstraint(parentBodyUniqueId=self._robot_id,
                                               parentLinkIndex=joint_num_map[joint][0] + i * 6,
                                               childBodyUniqueId=self._robot_id,
@@ -135,7 +137,7 @@ class Robot:
         """
         pos, rpy = self._bc.getBasePositionAndOrientation(self._robot_id)
         rpy = self._bc.getEulerFromQuaternion(rpy)
-        return np.concatenate((pos, rpy), axis=0)
+        return np.concatenate((pos, rpy), axis=0).astype(np.float32)
 
     def get_body_velocity(self):
         """
@@ -144,11 +146,11 @@ class Robot:
         Returns:
             np.array: concatenate(linear_velocity, angular_velocity)
 
-            Concatenated vector of linear and angular velocity
+            Concatenated vector of linear and angular velocity (total of 6 values)
 
         """
         linear_velocity, angular_velocity = self._bc.getBaseVelocity(self._robot_id)
-        return np.concatenate((linear_velocity, angular_velocity), axis=0)
+        return np.concatenate((linear_velocity, angular_velocity), axis=0).astype(np.float32)
 
     def get_joint_pos_vel_array(self):
         """
@@ -163,14 +165,14 @@ class Robot:
         joint_states = self._bc.getJointStates(bodyUniqueId=self._robot_id,
                                                jointIndices=self._joints_array)
 
-        joint_position = np.array(joint_states)[:, 0]
+        joint_position = np.array(joint_states)[:, 0]  # TODO: something is wrong I can feel it...
         joint_position[[1, 4]] = np.pi - joint_position[[1, 4]]
         joint_position[[2, 3, 5, 8, 9, 11]] = -joint_position[[2, 3, 5, 8, 9, 11]]
 
         joint_velocity = np.array(joint_states)[:, 1]
         joint_velocity[[1, 2, 3, 4, 5, 8, 9, 11]] = -joint_velocity[[1, 2, 3, 4, 5, 8, 9, 11]]
 
-        return np.concatenate((joint_position, joint_velocity), axis=0)
+        return np.concatenate((joint_position, joint_velocity), axis=0).astype(np.float32)
 
     def set_joint_array(self, target_positions, target_velocities=None):
         """
@@ -234,21 +236,25 @@ class Robot:
 
     @property
     def max_vel_limits(self):
-        joint_names = ['coxa', 'femur', 'tibia']
+        """Joint velocities limits (total of 12 values)"""
         max_vel_array = np.array([self._robot_data[joint]['actuator']['velocity'] /
-                                  self._robot_data[joint]['actuator']['gear_ratio'] for joint in joint_names] * 4)
+                                  self._robot_data[joint]['actuator']['gear_ratio'] for joint in self.joint_names] * 4,
+                                 dtype=np.float32)
         return max_vel_array
 
     @property
-    def joint_pos_limits(self):
-        joint_names = ['coxa', 'femur', 'tibia']
-        joitnt_limit_up = np.array(
-            [self._robot_data[joint]['joint']['limit']['upper'] for joint in joint_names] * 4)
-        joitnt_limit_up = np.deg2rad(joitnt_limit_up)
+    def joint_pos_upper_limits(self):
+        """Joint positions upper limits (total of 12 values)"""
+        joints_limit_up = np.array(
+            [self._robot_data[joint]['joint']['limit']['upper'] for joint in self.joint_names] * 4, dtype=np.float32)
+        joints_limit_up = np.deg2rad(joints_limit_up)
 
-        joitnt_limit_low = np.array(
-            [self._robot_data[joint]['joint']['limit']['lower'] for joint in joint_names] * 4)
-        joitnt_limit_low = np.deg2rad(joitnt_limit_low)
+        return joints_limit_up
 
-        return np.array([joitnt_limit_low,
-                         joitnt_limit_up])
+    @property
+    def joint_pos_lower_limits(self):
+        joints_limit_low = np.array(
+            [self._robot_data[joint]['joint']['limit']['lower'] for joint in self.joint_names] * 4, dtype=np.float32)
+        joints_limit_low = np.deg2rad(joints_limit_low)
+
+        return joints_limit_low

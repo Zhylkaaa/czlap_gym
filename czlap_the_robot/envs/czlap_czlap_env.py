@@ -5,13 +5,22 @@ import pybullet_utils.bullet_client as bc
 import pybullet as p
 import pybullet_data
 import os
+import warnings
+
 
 class CzlapCzlapEnv(gym.Env):
+    """
+    observations: concatenate(joint_positions, joint_velocities, body_position, body_rpy,
+                              body_linear_velocity, body_angular_velocity) (total of 36 values)
+
+    actions: target_positions (angles in radians) for each joint (total of 12 values)
+    """
     metadata = {'render.modes': ['human']}
 
     def __init__(self):
-        self._client = bc.BulletClient(connection_mode=p.GUI)
+        self._client = bc.BulletClient(connection_mode=p.DIRECT)
         self._client.setGravity(0, 0, -9.81)
+        self._client.setTimeStep(1/30)
 
         self._client.setAdditionalSearchPath(pybullet_data.getDataPath())
         self._client.loadURDF("plane.urdf", useMaximalCoordinates=True)
@@ -19,19 +28,91 @@ class CzlapCzlapEnv(gym.Env):
         dirname = os.path.dirname(__file__)  # is it portable solution?
         robot_path = os.path.join(dirname, '../urdf/robot.urdf')
         props_path = os.path.join(dirname, '../urdf/config/props.yaml')
-        self.robot = Robot(self._client, robot_path, props_path, (0., 0., 0.2), (0., 0., 0))
+        self.start_xyz = (0., 0., 0.2)
+        self.start_rpy = (0., 0., np.pi/2)
+        self.robot = Robot(self._client, robot_path, props_path, self.start_xyz, (0., 0., 0))
+
+        self.action_space = gym.spaces.box.Box(
+            low=self.robot.joint_pos_lower_limits,
+            high=self.robot.joint_pos_upper_limits)
+
+        body_position_lower_limits = np.array([-np.inf, -np.inf, 0], dtype=np.float32)
+        body_position_upper_limits = np.array([np.inf, np.inf, np.inf], dtype=np.float32)
+        body_rpy_limits = np.array([np.pi, np.pi, np.pi], dtype=np.float32)
+        body_linear_velocity_limits = np.array([np.inf, np.inf, np.inf], dtype=np.float32)
+        body_angular_velocity_limits = np.array([np.inf, np.inf, np.inf], dtype=np.float32)
+
+        observation_lower_limits = np.concatenate([self.robot.joint_pos_lower_limits,
+                                                   -self.robot.max_vel_limits,
+                                                   body_position_lower_limits,
+                                                   -body_rpy_limits,
+                                                   -body_linear_velocity_limits,
+                                                   -body_angular_velocity_limits], axis=0)
+
+        observation_upper_limits = np.concatenate([self.robot.joint_pos_upper_limits,
+                                                   self.robot.max_vel_limits,
+                                                   body_position_upper_limits,
+                                                   body_rpy_limits,
+                                                   body_linear_velocity_limits,
+                                                   body_angular_velocity_limits], axis=0)
+
+        self.observation_space = gym.spaces.box.Box(
+            low=observation_lower_limits,
+            high=observation_upper_limits)
+
+        self.last_position_and_rpy = self.robot.get_body_pos_and_rpy()
+
+        self.np_random, _ = gym.utils.seeding.np_random()
+        self.done = False
+
+    def get_observations(self):
+        observations = np.concatenate([self.robot.get_joint_pos_vel_array(),
+                                       self.robot.get_body_pos_and_rpy(),
+                                       self.robot.get_body_velocity()], axis=0)
+        return observations
+
+    # TODO: meybe something more complicated?
+    def calculate_reward(self, old_position, new_position):
+        y_dist = np.float32(new_position[1] - old_position[1])
+        return y_dist
 
     def step(self, action):
-        pass
+        if self.done:
+            warnings.warn('making actions after episode is done may lead to unexpected behaviour')
+
+        # TODO: punish for limit violation? or embed this in policy?
+        action = np.clip(action, self.robot.joint_pos_lower_limits, self.robot.joint_pos_upper_limits)
+
+        self.robot.set_joint_array(action)
+        self._client.stepSimulation()
+        obs = self.get_observations()
+
+        position, rpy = obs[24:24+3], obs[27:27+3]
+        last_position, last_rpy = self.last_position_and_rpy[:3], self.last_position_and_rpy[3:]
+        reward = self.calculate_reward(last_position, position)
+        self.done = False
+
+        if rpy[1] > np.pi/6 or rpy[1] < -np.pi/6 or position[2] <= 0.05:  # robot has "fallen"
+            self.done = True
+            reward -= 3.
+        elif position[1] >= 10.:
+            reward += 50.  # model was trained with 10 but i don't think it is that important
+            self.done = True
+
+        return obs, reward, self.done, dict()
 
     def reset(self):
-        pass
+        self.robot.reset_position()
+        self.last_position_and_rpy = self.robot.get_body_pos_and_rpy()
+        self.done = False
+        return self.get_observations()
 
     def render(self, mode='human'):
         pass
 
     def seed(self, seed=None):
-        pass
+        self.np_random, seed = gym.utils.seeding.np_random(seed)
+        return [seed]
 
     def close(self):
-        pass
+        self._client.disconnect()
