@@ -33,13 +33,13 @@ if __name__ == '__main__':
 
     agent = TRPOAgent(policy=nn)
 
-    agent.save_model("agent.pth")
-    agent.load_model("agent.pth")
-    agent.train('CzlapCzlap-v0', seed=0, batch_size=5000, iterations=10000,
-                max_episode_length=500, verbose=True)
-    agent.save_model("agent.pth")
+    for i in range(100):
+        agent.train('CzlapCzlap-v0', seed=0, batch_size=5000, iterations=100,
+                    max_episode_length=500, verbose=True)
+        print(f'saving checkpoint{i}')
+        agent.save_model(f"models/agent-{i}.pth")
 
-    """env = gym.make('CzlapCzlap-v0')
+    env = gym.make('CzlapCzlap-v0')
     ob = env.reset()
     while True:
         action = agent(ob)
@@ -47,4 +47,4 @@ if __name__ == '__main__':
         env.render()
         if done:
             ob = env.reset()
-            time.sleep(1 / 30)"""
+            time.sleep(1 / 30)

@@ -17,11 +17,11 @@ class CzlapCzlapEnv(gym.Env):
     """
     metadata = {'render.modes': ['human']}
 
-    def __init__(self):
+    def __init__(self, control_freq=10):
         self._client = bc.BulletClient(connection_mode=p.DIRECT)
         self._client.setGravity(0, 0, -9.81)
-        self._client.setTimeStep(1/30)
-
+        # self._client.setTimeStep(1/10) Krzysiek told me it breaks things
+        self.control_freq = control_freq
         self._client.setAdditionalSearchPath(pybullet_data.getDataPath())
         self._client.loadURDF("plane.urdf", useMaximalCoordinates=True)
 
@@ -30,7 +30,7 @@ class CzlapCzlapEnv(gym.Env):
         props_path = os.path.join(dirname, '../urdf/config/props.yaml')
         self.start_xyz = (0., 0., 0.2)
         self.start_rpy = (0., 0., np.pi/2)
-        self.robot = Robot(self._client, robot_path, props_path, self.start_xyz, (0., 0., 0))
+        self.robot = Robot(self._client, robot_path, props_path, self.start_xyz, self.start_rpy)
 
         self.action_space = gym.spaces.box.Box(
             low=self.robot.joint_pos_lower_limits,
@@ -63,6 +63,7 @@ class CzlapCzlapEnv(gym.Env):
         self.last_position_and_rpy = self.robot.get_body_pos_and_rpy()
 
         self.np_random, _ = gym.utils.seeding.np_random()
+        self.time_reward = 0.01
         self.done = False
 
     def get_observations(self):
@@ -74,7 +75,7 @@ class CzlapCzlapEnv(gym.Env):
     # TODO: meybe something more complicated?
     def calculate_reward(self, old_position, new_position):
         y_dist = np.float32(new_position[1] - old_position[1])
-        return y_dist
+        return y_dist + self.time_reward
 
     def step(self, action):
         if self.done:
@@ -84,7 +85,9 @@ class CzlapCzlapEnv(gym.Env):
         action = np.clip(action, self.robot.joint_pos_lower_limits, self.robot.joint_pos_upper_limits)
 
         self.robot.set_joint_array(action)
-        self._client.stepSimulation()
+        for _ in range(self.control_freq):
+            self._client.stepSimulation()
+
         obs = self.get_observations()
 
         position, rpy = obs[24:24+3], obs[27:27+3]
@@ -92,11 +95,14 @@ class CzlapCzlapEnv(gym.Env):
         reward = self.calculate_reward(last_position, position)
         self.done = False
 
-        if rpy[1] > np.pi/6 or rpy[1] < -np.pi/6 or position[2] <= 0.05:  # robot has "fallen"
+        self.last_position_and_rpy = np.concatenate((position, rpy), axis=0)
+
+        # robot has "fallen" if tilted front of backward or if rolled on side or if has fallen
+        if rpy[1] > np.pi/6 or rpy[1] < -np.pi/6 or rpy[0] >= np.pi/2 or rpy[0] <= -np.pi/2 or position[2] <= 0.07:
             self.done = True
             reward -= 3.
         elif position[1] >= 10.:
-            reward += 50.  # model was trained with 10 but i don't think it is that important
+            reward += 50.
             self.done = True
 
         return obs, reward, self.done, dict()
