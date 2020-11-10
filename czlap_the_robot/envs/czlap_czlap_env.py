@@ -6,6 +6,7 @@ import pybullet as p
 import pybullet_data
 import os
 import warnings
+import time
 
 
 class CzlapCzlapEnv(gym.Env):
@@ -17,7 +18,7 @@ class CzlapCzlapEnv(gym.Env):
     """
     metadata = {'render.modes': ['human']}
 
-    def __init__(self, control_freq=10):
+    def __init__(self, control_freq=24):
         self._client = bc.BulletClient(connection_mode=p.DIRECT)
         self._client.setGravity(0, 0, -9.81)
         # self._client.setTimeStep(1/10) Krzysiek told me it breaks things
@@ -74,8 +75,17 @@ class CzlapCzlapEnv(gym.Env):
 
     # TODO: meybe something more complicated?
     def calculate_reward(self, old_position, new_position):
-        y_dist = np.float32(new_position[1] - old_position[1])
-        return y_dist + self.time_reward
+        y_dist_traveled = np.float32(new_position[1] - old_position[1])
+        if y_dist_traveled > 0:
+            y_dist_traveled *= 2
+
+        y_dist_from_origin = 0.5 * np.float32(new_position[1] - self.start_xyz[1])
+
+        return y_dist_traveled + y_dist_from_origin + self.time_reward
+
+    def perform_simulation(self):
+        for _ in range(self.control_freq):
+            self._client.stepSimulation()
 
     def step(self, action):
         if self.done:
@@ -85,8 +95,7 @@ class CzlapCzlapEnv(gym.Env):
         action = np.clip(action, self.robot.joint_pos_lower_limits, self.robot.joint_pos_upper_limits)
 
         self.robot.set_joint_array(action)
-        for _ in range(self.control_freq):
-            self._client.stepSimulation()
+        self.perform_simulation()
 
         obs = self.get_observations()
 
@@ -100,7 +109,7 @@ class CzlapCzlapEnv(gym.Env):
         # robot has "fallen" if tilted front of backward or if rolled on side or if has fallen
         if rpy[1] > np.pi/6 or rpy[1] < -np.pi/6 or rpy[0] >= np.pi/2 or rpy[0] <= -np.pi/2 or position[2] <= 0.07:
             self.done = True
-            reward -= 3.
+            # reward -= 3.
         elif position[1] >= 10.:
             reward += 50.
             self.done = True
@@ -111,6 +120,7 @@ class CzlapCzlapEnv(gym.Env):
         self.robot.reset_position()
         self.last_position_and_rpy = self.robot.get_body_pos_and_rpy()
         self.done = False
+        self.perform_simulation()
         return self.get_observations()
 
     def render(self, mode='human'):

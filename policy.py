@@ -1,5 +1,5 @@
 import torch
-import torch.nn.functional as F
+import torch
 
 class Policy(torch.nn.Module):
     def __init__(self, input_size, hidden_size, out_size, constraints):
@@ -13,5 +13,5 @@ class Policy(torch.nn.Module):
         relu1 = self.linear1(x).clamp(min=0)
         model_out = self.linear2(relu1)
 
-        rescaled_output = F.tanh(model_out) * self.constraints
+        rescaled_output = torch.tanh(model_out) * self.constraints
         return rescaled_output

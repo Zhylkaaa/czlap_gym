@@ -32,12 +32,12 @@ if __name__ == '__main__':
     nn = Policy(36, 256, 12, constraints)
 
     agent = TRPOAgent(policy=nn)
-
-    for i in range(100):
+    agent.load_model('models/agent-17.pth')
+    """for i in range(18, 100):
         agent.train('CzlapCzlap-v0', seed=0, batch_size=5000, iterations=100,
                     max_episode_length=500, verbose=True)
         print(f'saving checkpoint{i}')
-        agent.save_model(f"models/agent-{i}.pth")
+        agent.save_model(f"models/agent-{i}.pth")"""
 
     env = gym.make('CzlapCzlap-v0')
     ob = env.reset()

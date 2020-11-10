@@ -7,5 +7,6 @@ setup(
                       'pybullet',
                       'numpy',
                       'matplotlib',
-                      'torch']
+                      'torch',
+                      'pyyaml']
 )
