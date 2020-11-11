@@ -53,6 +53,10 @@ class Robot:
         self.joint_names = ['coxa', 'femur', 'tibia']
         self._robot_id = None
         self._robot_data = None
+        self._link_len_arr = None
+        self._coxa_link_len = None
+        self._femur_link_len = None
+        self._tibia_link_len = None
         # self._position_gains = [0.2 for _ in range(12)]
         # self._velocity_gains = [0.0001 for _ in range(12)]
 
@@ -75,7 +79,7 @@ class Robot:
         quaternion = self._bc.getQuaternionFromEuler(self._start_rpy)
         self._robot_id = self._bc.loadURDF(fileName=self._urdf_path,
                                            basePosition=self._start_xyz,
-                                           baseOrientation=quaternion)
+                                           baseOrientation=quaternion, useFixedBase=1)
         self._import_props()
         self._reset_actuator_joints()
         self.reset_position()
@@ -90,8 +94,14 @@ class Robot:
             except yaml.YAMLError as exc:
                 print(exc)
 
+        self._coxa_link_len = self._robot_data['coxa']['joint']['origin']['x']
+        self._femur_link_len = self._robot_data['femur']['joint']['origin']['x']
+        self._tibia_link_len = self._robot_data['tibia']['joint']['origin']['x']
+        self._link_len_arr = np.array([self._coxa_link_len, self._femur_link_len, self._tibia_link_len])
+
+
     def _reset_actuator_joints(self):
-        """Have no fucking clue"""
+        """Sets actuators be pure inertia without any dumping not spring stiffness"""
         for i in range(0, self._bc.getNumJoints(self._robot_id), 2):
             self._bc.setJointMotorControl2(self._robot_id, i,
                                            self._bc.VELOCITY_CONTROL,
@@ -122,6 +132,37 @@ class Robot:
                 elif joint == 'tibia' and i % 2 == 0:
                     gear_ratio *= -1
                 self._bc.changeConstraint(c, gearRatio=gear_ratio, maxForce=10000)
+
+    def _single_leg_inv_kinematicks(self, xyz):
+        """
+        Get single leg tip position relative to coxa base
+        in [x, y, z] coordinates.
+
+        Returns:
+            np.array: [coxa_angle, femur_angle, tibia_angle]
+            angles are in radians
+        """
+
+        pow_xyz = np.power(xyz, 2)
+        pow_link_len_arr = np.power(self._link_len_arr, 2)
+
+        tibia_angle_num = np.sum(pow_xyz) - np.sum(pow_link_len_arr)
+        tibia_angle_den = 2 * self._link_len_arr[1] * self._link_len_arr[2]
+
+        # helping variables for future equations
+        r = tibia_angle_num / tibia_angle_den       # cos(tibia_angle)
+        q = 1 - r**2                                # sin(tibia_angle)**2
+
+        tibia_angle = np.arccos(r) 
+        
+
+        femur_angle_den = (self._link_len_arr[1] + self._link_len_arr[2]*r)**2 + pow_link_len_arr[2]*q
+        femur_angle_num = -xyz[0]*(self._link_len_arr[1]+r) - np.sqrt(pow_xyz[0]*(self._link_len_arr[1]+r)**2 + pow_link_len_arr[2]*q * femur_angle_den) 
+
+        femur_angle = np.arccos(femur_angle_num/femur_angle_den)
+
+        coxa_angle = np.pi/2 - np.arccos((self._link_len_arr[2]*(np.cos(tibia_angle)*np.sin(femur_angle) + np.cos(femur_angle)*np.sin(tibia_angle)) + self._link_len_arr[1]*np.sin(femur_angle)) / self._link_len_arr[0])
+        return [coxa_angle, femur_angle-np.pi/2, tibia_angle]
 
     def get_body_pos_and_rpy(self):
         """
