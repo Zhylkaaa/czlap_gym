@@ -28,7 +28,7 @@ if __name__ == '__main__':
         # joint_pos = np.array([joint_move[i], np.pi/4+joint_move[i],  np.pi/2+joint_move[i]]).reshape(3, 1)
         # joint_pos = (np.ones((4, 1)) * joint_pos.T).reshape(1, 12)[0]
         
-        leg_ang = rob._single_leg_inv_kinematicks([0, 0.15*np.sqrt(2)+0.01, 0.105])
+        leg_ang = rob._single_leg_inv_kinematicks([0, 0.15*np.sqrt(2), 0.105])
         print(np.rad2deg(leg_ang))
 
         rob.set_joint_array(np.array(leg_ang * 4))

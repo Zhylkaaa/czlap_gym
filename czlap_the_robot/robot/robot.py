@@ -143,6 +143,8 @@ class Robot:
             angles are in radians
         """
 
+        assert np.linalg.norm(xyz) <= np.linalg.norm([self._link_len_arr[0], self._link_len_arr[1]+self._link_len_arr[2]])
+
         pow_xyz = np.power(xyz, 2)
         pow_link_len_arr = np.power(self._link_len_arr, 2)
 
