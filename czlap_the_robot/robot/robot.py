@@ -5,7 +5,9 @@ import pybullet as p
 import pybullet_data
 from pybullet_utils.bullet_client import BulletClient
 from typing import Tuple, Optional
+from czlap_the_robot.robot.motor_controller import Controller
 
+from simple_pid import PID
 
 class Robot:
     """
@@ -57,13 +59,11 @@ class Robot:
         self._coxa_link_len = None
         self._femur_link_len = None
         self._tibia_link_len = None
-        # self._position_gains = [0.2 for _ in range(12)]
-        # self._velocity_gains = [0.0001 for _ in range(12)]
 
-        self._joints_array = [1, 3, 5,
-                              7, 9, 11,
-                              13, 15, 17,
-                              19, 21, 23]
+        self._joints_array = [2,  4,  6,
+                              8,  10, 12,
+                              14, 16, 18,
+                              20, 22, 24]
 
         self._control_mode = control_mode
         self._start_joint_pos = None
@@ -79,11 +79,11 @@ class Robot:
         quaternion = self._bc.getQuaternionFromEuler(self._start_rpy)
         self._robot_id = self._bc.loadURDF(fileName=self._urdf_path,
                                            basePosition=self._start_xyz,
-                                           baseOrientation=quaternion, useFixedBase=1)
+                                           baseOrientation=quaternion)
         self._import_props()
         self._reset_actuator_joints()
         self.reset_position()
-        self._set_mimic_joints()
+        # self._set_mimic_joints()
         self.set_joint_array(self._start_joint_pos, np.zeros((12,)))
 
     def _import_props(self):
@@ -107,10 +107,12 @@ class Robot:
                                            self._bc.VELOCITY_CONTROL,
                                            targetVelocity=0,
                                            force=0)
+            self._bc.changeDynamics(self._robot_id, i, linearDamping=0, angularDamping=0)
+
 
     def _set_mimic_joints(self):
         """Have no fucking clue"""
-        joint_num_map = {'coxa': (1, 0), 'femur': (3, 2), 'tibia': (5, 4)}
+        joint_num_map = {'coxa': (2, 1), 'femur': (4, 3), 'tibia': (6, 5)}
         for i in range(4):
             for joint in self.joint_names:
                 c = self._bc.createConstraint(parentBodyUniqueId=self._robot_id,
@@ -209,11 +211,8 @@ class Robot:
                                                jointIndices=self._joints_array)
 
         joint_position = np.array(joint_states)[:, 0]  # TODO: something is wrong I can feel it...
-        joint_position[[1, 4]] = np.pi - joint_position[[1, 4]]
-        joint_position[[2, 3, 5, 8, 9, 11]] = -joint_position[[2, 3, 5, 8, 9, 11]]
 
         joint_velocity = np.array(joint_states)[:, 1]
-        joint_velocity[[1, 2, 3, 4, 5, 8, 9, 11]] = -joint_velocity[[1, 2, 3, 4, 5, 8, 9, 11]]
 
         return np.concatenate((joint_position, joint_velocity), axis=0).astype(np.float32)
 
@@ -239,13 +238,14 @@ class Robot:
             remapped_target_velocities = np.copy(target_velocities)
             remapped_target_velocities[[1, 2, 3, 4, 5, 8, 9, 11]] = -target_velocities[[1, 2, 3, 4, 5, 8, 9, 11]]
 
-        self._bc.setJointMotorControlArray(bodyUniqueId=self._robot_id,
-                                           jointIndices=self._joints_array,
+        for i in range(len(self._joints_array)):
+            self._bc.setJointMotorControl2(bodyUniqueId=self._robot_id,
+                                           jointIndex=self._joints_array[i],
                                            controlMode=self._control_mode,
-                                           targetPositions=remapped_target_positions)
-        #    targetVelocities=remapped_target_velocities,
-        #    positionGains=self._position_gains)
-        #    velocityGains=self._velocity_gains)
+                                           targetPosition=remapped_target_positions[i],
+                                           maxVelocity=10,
+                                           force=12)        # TODO Read thius stuff from URDF or YAML
+
 
     def reset_position(self, target_position=None):
         """
@@ -262,11 +262,11 @@ class Robot:
         helper_target_positnion[[2, 3, 5, 8, 9, 11]] = -target_position[[2, 3, 5, 8, 9, 11]]
 
         remapped_target_position = np.zeros(np.shape(target_position)[0] * 2)
-        remapped_target_position[self._joints_array] = helper_target_positnion
-        for i in range(0, self._bc.getNumJoints(self._robot_id)):
+        remapped_target_position[np.array(self._joints_array)-1] = helper_target_positnion
+        for i in range(1, self._bc.getNumJoints(self._robot_id)):
             self._bc.resetJointState(bodyUniqueId=self._robot_id,
                                      jointIndex=i,
-                                     targetValue=remapped_target_position[i],
+                                     targetValue=remapped_target_position[i-1],
                                      targetVelocity=0)
 
         self._bc.resetBaseVelocity(self._robot_id,
