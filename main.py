@@ -30,16 +30,17 @@ if __name__ == '__main__':
     constraints = np.maximum(np.abs(joints_limit_low), np.abs(joints_limit_up))
 
     nn = Policy(36, 256, 12, constraints)
+    kwargs = {'simulation_step': 1./2000., 'control_freq': 1/10.}
 
     agent = TRPOAgent(policy=nn)
-    agent.load_model('models/agent-17.pth')
-    """for i in range(18, 100):
+    agent.load_model('models/agent-2.pth')
+    """for i in range(100):
         agent.train('CzlapCzlap-v0', seed=0, batch_size=5000, iterations=100,
-                    max_episode_length=500, verbose=True)
+                    max_episode_length=500, verbose=True, **kwargs)
         print(f'saving checkpoint{i}')
         agent.save_model(f"models/agent-{i}.pth")"""
 
-    env = gym.make('CzlapCzlap-v0')
+    env = gym.make('CzlapCzlap-v0', **kwargs)
     ob = env.reset()
     while True:
         action = agent(ob)

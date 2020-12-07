@@ -18,11 +18,12 @@ class CzlapCzlapEnv(gym.Env):
     """
     metadata = {'render.modes': ['human']}
 
-    def __init__(self, control_freq=24):
+    def __init__(self, simulation_step=1./2000., control_freq=1/10., real_time=0):
         self._client = bc.BulletClient(connection_mode=p.DIRECT)
         self._client.setGravity(0, 0, -9.81)
-        # self._client.setTimeStep(1/10) Krzysiek told me it breaks things
-        self.control_freq = control_freq
+        self._client.setTimeStep(simulation_step)
+        self._client.setRealTimeSimulation(real_time)
+        self.samples_per_control = int(control_freq / simulation_step)  # number of simulation steps to take before 1 control command
         self._client.setAdditionalSearchPath(pybullet_data.getDataPath())
         self._client.loadURDF("plane.urdf", useMaximalCoordinates=True)
 
@@ -84,7 +85,7 @@ class CzlapCzlapEnv(gym.Env):
         return y_dist_traveled + y_dist_from_origin + self.time_reward
 
     def perform_simulation(self):
-        for _ in range(self.control_freq):
+        for _ in range(self.samples_per_control):
             self._client.stepSimulation()
 
     def step(self, action):
@@ -106,8 +107,8 @@ class CzlapCzlapEnv(gym.Env):
 
         self.last_position_and_rpy = np.concatenate((position, rpy), axis=0)
 
-        # robot has "fallen" if tilted front of backward or if rolled on side or if has fallen
-        if rpy[1] > np.pi/6 or rpy[1] < -np.pi/6 or rpy[0] >= np.pi/2 or rpy[0] <= -np.pi/2 or position[2] <= 0.07:
+        # robot has "fallen" if tilted front of backward more than 30 degree or if rolled on side or if has fallen
+        if rpy[1] > np.pi/6 or rpy[1] < -np.pi/6 or rpy[0] >= np.pi/2 or rpy[0] <= -np.pi/2 or position[2] <= 0.1:
             self.done = True
             # reward -= 3.
         elif position[1] >= 10.:

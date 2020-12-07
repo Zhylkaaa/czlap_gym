@@ -228,10 +228,10 @@ class TRPOAgent:
             del storage[:num_batch_steps]
 
     def train(self, env_name, seed=None, batch_size=12000, iterations=100,
-              max_episode_length=None, verbose=False):
+              max_episode_length=None, verbose=False, **kwargs):
 
         # Initialize env
-        env = gym.make(env_name)
+        env = gym.make(env_name, **kwargs)
         if seed is not None:
             torch.manual_seed(seed)
             env.seed(seed)
