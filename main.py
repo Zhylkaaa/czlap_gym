@@ -6,46 +6,44 @@ import numpy as np
 import matplotlib.pyplot as plt
 import os
 import torch
-from agent import TRPOAgent
 import gym
 import czlap_the_robot
 from policy import Policy
 import yaml
+from stable_baselines3.common.vec_env import SubprocVecEnv, VecNormalize, DummyVecEnv
+from stable_baselines3 import PPO
+from stable_baselines3.common.utils import set_random_seed
+from stable_baselines3.common.env_util import make_vec_env
+
 
 if __name__ == '__main__':
+    env_id = 'CzlapCzlap-v0'
+    num_cpu = 4
 
-    # TODO(1): refactor this block
-    with open('czlap_the_robot/urdf/config/props.yaml', 'r') as stream:
-        robot_config = yaml.safe_load(stream)
-    joint_names = ['coxa', 'femur', 'tibia']
-    joints_limit_up = np.array(
-        [robot_config[joint]['joint']['limit']['upper'] for joint in joint_names] * 4, dtype=np.float32)
-    joints_limit_up = np.deg2rad(joints_limit_up)
+    #env = DummyVecEnv([lambda: gym.make(env_id)])
+    env = make_vec_env(env_id, n_envs=num_cpu, seed=0)
 
-    joints_limit_low = np.array(
-        [robot_config[joint]['joint']['limit']['lower'] for joint in joint_names] * 4, dtype=np.float32)
-    joints_limit_low = np.deg2rad(joints_limit_low)
-    # TODO(1): end of block
+    env = VecNormalize(env, norm_obs=True, norm_reward=True)
 
-    constraints = np.maximum(np.abs(joints_limit_low), np.abs(joints_limit_up))
+    n_steps = 2048
+    steps_per_env = n_steps // num_cpu
 
-    nn = Policy(36, 256, 12, constraints)
-    kwargs = {'simulation_step': 1./2000., 'control_freq': 1/10.}
+    policy_kwargs = dict(net_arch=[128, 128])
+    model = PPO('MlpPolicy', env, policy_kwargs=policy_kwargs,
+                verbose=1, tensorboard_log='./test_stable_baseline/',
+                batch_size=128, n_steps=steps_per_env)
 
-    agent = TRPOAgent(policy=nn)
-    agent.load_model('models/agent-2.pth')
-    """for i in range(100):
-        agent.train('CzlapCzlap-v0', seed=0, batch_size=5000, iterations=100,
-                    max_episode_length=500, verbose=True, **kwargs)
-        print(f'saving checkpoint{i}')
-        agent.save_model(f"models/agent-{i}.pth")"""
+    model.learn(total_timesteps=n_steps*1000)
 
-    env = gym.make('CzlapCzlap-v0', **kwargs)
-    ob = env.reset()
-    while True:
-        action = agent(ob)
-        ob, _, done, _ = env.step(action)
-        env.render()
+    model.save('model_1000_baselines_v2')
+
+    """model = PPO.load('model_100_baselines')
+
+    obs = env.reset()
+
+    for _ in range(1000):
+        action, _state = model.predict(obs, deterministic=True)
+        obs, reward, done, info = env.step(action)
         if done:
-            ob = env.reset()
-            time.sleep(1 / 30)
+            obs = env.reset()"""
+

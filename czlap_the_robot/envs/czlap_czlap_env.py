@@ -34,9 +34,12 @@ class CzlapCzlapEnv(gym.Env):
         self.start_rpy = (0., 0., np.pi/2)
         self.robot = Robot(self._client, robot_path, props_path, self.start_xyz, self.start_rpy)
 
+        self.joint_pos_lower_limits = self.robot.joint_pos_lower_limits
+        self.joint_pos_upper_limits = self.robot.joint_pos_upper_limits
+
         self.action_space = gym.spaces.box.Box(
-            low=self.robot.joint_pos_lower_limits,
-            high=self.robot.joint_pos_upper_limits)
+            low=-np.ones_like(self.joint_pos_lower_limits),
+            high=np.ones_like(self.joint_pos_upper_limits))
 
         body_position_lower_limits = np.array([-np.inf, -np.inf, 0], dtype=np.float32)
         body_position_upper_limits = np.array([np.inf, np.inf, np.inf], dtype=np.float32)
@@ -88,12 +91,29 @@ class CzlapCzlapEnv(gym.Env):
         for _ in range(self.samples_per_control):
             self._client.stepSimulation()
 
+    def convert_actions(self, actions):
+        """
+        convert actions from [-1, 1] to target range, depending on joint limits
+        actions: array of self.joint_pos_upper_limits.shape shape with values from [-1, 1] interval
+
+        Returns:
+             actions: array of self.joint_pos_upper_limits.shape shape with values from target interval (e.g. [0, pi]
+        """
+
+        joint_action_range = self.joint_pos_upper_limits - self.joint_pos_lower_limits
+        actions = self.joint_pos_lower_limits + (joint_action_range / 2.) * (actions + 1)
+        return actions
+
+
     def step(self, action):
         if self.done:
             warnings.warn('making actions after episode is done may lead to unexpected behaviour')
 
         # TODO: punish for limit violation? or embed this in policy?
-        action = np.clip(action, self.robot.joint_pos_lower_limits, self.robot.joint_pos_upper_limits)
+        # action = np.clip(action, self.robot.joint_pos_lower_limits, self.robot.joint_pos_upper_limits)
+
+        # now actions are bound to [-1, 1] interval, so should be rescaled to limits
+        action = self.convert_actions(action)
 
         self.robot.set_joint_array(action)
         self.perform_simulation()
