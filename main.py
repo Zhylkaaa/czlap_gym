@@ -14,7 +14,7 @@ from stable_baselines3.common.vec_env import SubprocVecEnv, VecNormalize, DummyV
 from stable_baselines3 import PPO
 from stable_baselines3.common.utils import set_random_seed
 from stable_baselines3.common.env_util import make_vec_env
-
+from stable_baselines3.common.callbacks import CheckpointCallback
 
 if __name__ == '__main__':
     env_id = 'CzlapCzlap-v0'
@@ -28,12 +28,14 @@ if __name__ == '__main__':
     n_steps = 2048
     steps_per_env = n_steps // num_cpu
 
+    checkpoint_callback = CheckpointCallback(save_freq=n_steps*2, save_path='./checkpoints/', verbose=1)
+
     policy_kwargs = dict(net_arch=[128, 128])
     model = PPO('MlpPolicy', env, policy_kwargs=policy_kwargs,
                 verbose=1, tensorboard_log='./test_stable_baseline/',
                 batch_size=128, n_steps=steps_per_env)
 
-    model.learn(total_timesteps=n_steps*1000)
+    model.learn(total_timesteps=n_steps*1000, callback=checkpoint_callback)
 
     model.save('model_1000_baselines_v2')
 
