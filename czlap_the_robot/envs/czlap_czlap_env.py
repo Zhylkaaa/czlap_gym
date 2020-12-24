@@ -32,11 +32,11 @@ class CzlapCzlapEnv(gym.Env):
         robot_path = os.path.join(dirname, '../urdf/robot.urdf')
         props_path = os.path.join(dirname, '../urdf/config/props.yaml')
 
-        self.start_xyz = (0., 0., 0.25)
         self.start_rpy = (0., 0., np.pi/2)
         self.initial_position = self.start_xyz = (0., 0., 0.25)
 
-        self.robot = Robot(self._client, robot_path, props_path, self.start_xyz, self.start_rpy)
+        self.robot = Robot(self._client, robot_path, props_path, xyz=self.start_xyz, rpy=self.start_rpy)
+
 
         self.joint_pos_lower_limits = self.robot.joint_pos_lower_limits
         self.joint_pos_upper_limits = self.robot.joint_pos_upper_limits
@@ -66,37 +66,57 @@ class CzlapCzlapEnv(gym.Env):
                                                    body_angular_velocity_limits], axis=0)
 
         self.observation_space = gym.spaces.box.Box(
-            low=observation_lower_limits,
-            high=observation_upper_limits)
+            low=np.concatenate([observation_lower_limits, self.action_space.low.astype(np.float32)]),
+            high=np.concatenate([observation_upper_limits, self.action_space.high.astype(np.float32)]))
 
         self.last_position_and_rpy = self.robot.get_body_pos_and_rpy()
+        self.last_action = np.zeros_like(self.action_space.low)
 
         self.np_random, _ = gym.utils.seeding.np_random()
         self.time_reward = 0.01  # TODO: make it time punishment?
         self.done = False
+        self.turn_additional_punishment = False
 
     def get_observations(self):
         observations = np.concatenate([self.robot.get_joint_pos_vel_array(),
                                        self.robot.get_body_pos_and_rpy(),
-                                       self.robot.get_body_velocity()], axis=0)
+                                       self.robot.get_body_velocity(),
+                                       self.last_action], axis=0)
         return observations
 
     # TODO: meybe something more complicated?
-    def calculate_reward(self, old_position, new_position):
+    def calculate_reward(self, old_pos_and_rpy, new_pos_and_rpy):
 
-        y_dist_traveled = np.float32(new_position[1] - old_position[1])
+        y_dist_traveled = np.float32(new_pos_and_rpy[1] - old_pos_and_rpy[1])
         if y_dist_traveled > 0:
             y_dist_traveled *= 2
 
-        y_dist_from_origin = 0.05 * np.float32(new_position[1] - self.initial_position[1])
+        y_dist_from_origin = 0.05 * np.float32(new_pos_and_rpy[1] - self.initial_position[1])
 
-        tolerance = 0.04
-        height_punishment = new_position[2] - (self.initial_position[2] - tolerance)
+        tolerance = 0.03
+        height_punishment = new_pos_and_rpy[2] - (old_pos_and_rpy[2] - tolerance)
         if height_punishment > 0:
             height_punishment = 0
 
+        if self.turn_additional_punishment:
+            height_weight = 0.0001
+            x_weight = 0.0001
+            yaw_weight = 0.002
+        else:
+            height_weight = 0
+            x_weight = 0
+            yaw_weight = 0
+
+        x_deviation_punishment = -np.abs(new_pos_and_rpy[0] - old_pos_and_rpy[0])
         #return y_dist_traveled + y_dist_from_origin + self.time_reward
-        return y_dist_traveled + self.time_reward + 0.2 * height_punishment
+
+        yaw_punishment = -np.abs(new_pos_and_rpy[5] - old_pos_and_rpy[5])
+
+        # time seems to improve results ~\_(0_0)_/~
+        return y_dist_traveled + y_dist_from_origin + self.time_reward + \
+                   height_weight * height_punishment + \
+                   x_weight * x_deviation_punishment + \
+                   yaw_weight * yaw_punishment
 
     def perform_simulation(self):
         for _ in range(self.samples_per_control):
@@ -123,6 +143,7 @@ class CzlapCzlapEnv(gym.Env):
         # action = np.clip(action, self.robot.joint_pos_lower_limits, self.robot.joint_pos_upper_limits)
 
         # now actions are bound to [-1, 1] interval, so should be rescaled to limits
+        self.last_action = action
         action = self.convert_actions(action)
 
         self.robot.set_joint_array(action)
@@ -130,19 +151,25 @@ class CzlapCzlapEnv(gym.Env):
 
         obs = self.get_observations()
 
-        position, rpy = obs[24:24+3], obs[27:27+3]
-        last_position, last_rpy = self.last_position_and_rpy[:3], self.last_position_and_rpy[3:]
-        reward = self.calculate_reward(last_position, position)
-        self.done = False  # ?
+        position_and_rpy = obs[24:24+6]
+        reward = self.calculate_reward(self.last_position_and_rpy, position_and_rpy)
+        self.done = False
 
-        self.last_position_and_rpy = np.concatenate((position, rpy), axis=0)
+        self.last_position_and_rpy = position_and_rpy
 
-        # robot has "fallen" if tilted front of backward more than 30 degree or if rolled on side or if has fallen
-        if rpy[1] > np.pi/6 or rpy[1] < -np.pi/6 or rpy[0] >= np.pi/2 or rpy[0] <= -np.pi/2 or position[2] <= 0.1:
+        # robot has "fallen" if tilted front of backward more than 30 degree
+        # or if rolled on side
+        # or if has fallen
+        # or if deviated from original x axis position mor than 2 meters
+        if position_and_rpy[4] > np.pi/6 or position_and_rpy[4] < -np.pi/6 or \
+                position_and_rpy[3] >= 0.9*np.pi/2 or position_and_rpy[3] <= -0.9*np.pi/2 \
+                or position_and_rpy[2] <= 0.1 \
+                or position_and_rpy[0] <= -2 or position_and_rpy[0] >= 2:
             self.done = True
-            reward -= 3.
-        elif position[1] >= 5.:
-            reward += 20.
+            reward -= 1.
+        elif position_and_rpy[1] >= 5.:
+            self.turn_additional_punishment = False
+            reward += 1.
             self.done = True
 
         return obs, reward, self.done, dict()
@@ -163,9 +190,10 @@ class CzlapCzlapEnv(gym.Env):
             new_pos_and_rpy = self.robot.get_body_pos_and_rpy()"""
 
         self.initial_position = self.last_position_and_rpy
+        self.last_action = np.zeros_like(self.action_space.low)
 
-        self._client.setTimeStep(self.simulation_step)
         self.done = False
+        self.turn_additional_punishment = False
 
         return self.get_observations()
 

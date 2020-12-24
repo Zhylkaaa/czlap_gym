@@ -10,7 +10,7 @@ import gym
 import czlap_the_robot
 from policy import Policy
 import yaml
-from stable_baselines3.common.vec_env import SubprocVecEnv, VecNormalize, DummyVecEnv
+from stable_baselines3.common.vec_env import SubprocVecEnv, VecNormalize, DummyVecEnv, VecFrameStack
 from stable_baselines3 import PPO
 from stable_baselines3.common.utils import set_random_seed
 from stable_baselines3.common.env_util import make_vec_env
@@ -46,14 +46,18 @@ if __name__ == '__main__':
     env = make_vec_env(env_id, n_envs=num_cpu, seed=0, env_kwargs=env_kwargs)
 
     env = VecNormalize(env, norm_obs=True, norm_reward=True)
+    env = VecFrameStack(env, n_stack=1)
 
     n_steps = 2048
     steps_per_env = n_steps // num_cpu
     #steps_per_env = n_steps
 
-    checkpoint_callback = CheckpointCallback(save_freq=n_steps*20, save_path='./checkpoints-1000-v4/', verbose=1)
+    checkpoint_callback = CheckpointCallback(save_freq=n_steps*20, save_path='./checkpoints-1000-v13/', verbose=1)
 
-    policy_kwargs = dict(net_arch=[128, dict(vf=[128], pi=[128])])
+    shared_net = [256]
+    vf = [128]
+    pi = [128]
+    policy_kwargs = dict(net_arch=[*shared_net, dict(vf=vf, pi=pi)])
     model = PPO('MlpPolicy', env, policy_kwargs=policy_kwargs,
                 verbose=1, tensorboard_log='./test_stable_baseline/',
                 batch_size=64, n_steps=steps_per_env, n_epochs=15,
@@ -61,9 +65,10 @@ if __name__ == '__main__':
 
     model.learn(total_timesteps=n_steps*1000, callback=checkpoint_callback)
 
-    model.save('model_1000_baselines_v4')
+    model.save('model_1000_baselines_v13')
 
-    """model = PPO.load('./checkpoints-1000-v3/rl_model_2048000_steps')
+    """#model = PPO.load('./checkpoints-1000-v13/rl_model_819200_steps')
+    model = PPO.load('model_1000_baselines_v13')
 
     obs = env.reset()
     rews = []
