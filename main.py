@@ -79,7 +79,7 @@ if __name__ == '__main__':
     env_id = 'CzlapCzlap-v0'
     num_cpu = 4
 
-    env_kwargs = dict(simulation_step=1/750)
+    env_kwargs = dict(simulation_step=1/750., control_freq=1/30.)
     #env = DummyVecEnv([lambda: gym.make(env_id)])
     env = make_vec_env(env_id, n_envs=num_cpu, vec_env_cls=SubprocVecEnv,
                        seed=0, env_kwargs=env_kwargs)
@@ -87,12 +87,12 @@ if __name__ == '__main__':
     env = VecFrameStack(env, n_stack=1)
     env = VecNormalize(env, norm_obs=True, norm_reward=True)
 
-    steps_per_env = 512
+    steps_per_env = 1540
     n_steps = steps_per_env * num_cpu
 
     #steps_per_env = n_steps
 
-    checkpoint_callback = CheckpointCallback(save_freq=n_steps*20, save_path='./checkpoints-1000-v16/', verbose=1)
+    checkpoint_callback = CheckpointCallback(save_freq=n_steps*20, save_path='./checkpoints-1000-v17/', verbose=2)
 
     shared_net = [128]
     vf = [128]
@@ -100,32 +100,11 @@ if __name__ == '__main__':
     policy_kwargs = dict(net_arch=[*shared_net, dict(vf=vf, pi=pi)])
     model = PPO('MlpPolicy', env, policy_kwargs=policy_kwargs,
                 verbose=1, tensorboard_log='./test_stable_baseline/',
-                batch_size=64, n_steps=steps_per_env, n_epochs=15,
+                batch_size=128, n_steps=steps_per_env, n_epochs=15,
                 learning_rate=linear_schedule(1e-4))
 
     model.learn(total_timesteps=n_steps*1000, callback=checkpoint_callback)
     
-    model.save('model_1000_baselines_v16')
-    env.save('env_1000_baselines_v16')
-
-    """model = PPO.load('./checkpoints-1000-v16/rl_model_42_steps')
-    #model = PPO.load('model_1000_baselines_v16')
-    
-    env = env.load(./checkpoints-1000-v16/rl_env_4259840_steps)
-    #env = env.load('model_1000_baselines_v16')
-    
-    obs = env.reset()
-    rews = []
-    for _ in range(1000):
-        action, _state = model.predict(obs, deterministic=True)
-        action_start = time.time()
-        obs, reward, done, info = env.step(action)
-        action_end = time.time()
-        rews.append(reward)
-        if action_end - action_start < 1/10:
-            time.sleep(1/10)
-        if done:
-            obs = env.reset()
-            print(np.sum(rews))
-            rews = []"""
+    model.save('model_1000_baselines_v17')
+    env.save('env_1000_baselines_v17')
 

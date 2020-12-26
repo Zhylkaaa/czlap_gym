@@ -19,7 +19,7 @@ class CzlapCzlapEnv(gym.Env):
     metadata = {'render.modes': ['human']}
 
     def __init__(self, simulation_step=1./2000., control_freq=1/10., real_time=0):
-        self._client = bc.BulletClient(connection_mode=p.DIRECT)
+        self._client = bc.BulletClient(connection_mode=p.GUI)
         self._client.setGravity(0, 0, -9.81)
         self.simulation_step = simulation_step
         self._client.setTimeStep(simulation_step)
@@ -91,7 +91,7 @@ class CzlapCzlapEnv(gym.Env):
         if y_dist_traveled > 0:
             y_dist_traveled *= 2
 
-        y_dist_from_origin = 0.05 * np.float32(new_pos_and_rpy[1] - self.initial_position[1])
+        y_dist_from_origin = 0.0005 * np.float32(new_pos_and_rpy[1] - self.initial_position[1])
 
         tolerance = 0.03
         height_punishment = new_pos_and_rpy[2] - (old_pos_and_rpy[2] - tolerance)
@@ -113,7 +113,7 @@ class CzlapCzlapEnv(gym.Env):
         yaw_punishment = -np.abs(new_pos_and_rpy[5] - old_pos_and_rpy[5])
 
         # time seems to improve results ~\_(0_0)_/~
-        return y_dist_traveled + y_dist_from_origin + self.time_reward + \
+        return y_dist_traveled + y_dist_from_origin + \
                    height_weight * height_punishment + \
                    x_weight * x_deviation_punishment + \
                    yaw_weight * yaw_punishment
@@ -135,7 +135,7 @@ class CzlapCzlapEnv(gym.Env):
         actions = self.joint_pos_lower_limits + (joint_action_range / 2.) * (actions + 1)
         return actions
 
-    def step(self, action):
+    def step(self, action: np.ndarray):
         if self.done:
             warnings.warn('making actions after episode is done may lead to unexpected behaviour')
 
@@ -143,7 +143,7 @@ class CzlapCzlapEnv(gym.Env):
         # action = np.clip(action, self.robot.joint_pos_lower_limits, self.robot.joint_pos_upper_limits)
 
         # now actions are bound to [-1, 1] interval, so should be rescaled to limits
-        self.last_action = action
+        self.last_action = np.copy(action)
         action = self.convert_actions(action)
 
         self.robot.set_joint_array(action)
