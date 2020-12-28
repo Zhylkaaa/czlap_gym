@@ -18,6 +18,7 @@ from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.callbacks import BaseCallback
 from typing import Callable
 
+
 def linear_schedule(initial_value: float) -> Callable[[float], float]:
     """
     Linear learning rate schedule.
@@ -92,7 +93,7 @@ if __name__ == '__main__':
 
     #steps_per_env = n_steps
 
-    checkpoint_callback = CheckpointCallback(save_freq=n_steps*20, save_path='./checkpoints-1000-v17/', verbose=2)
+    checkpoint_callback = CheckpointCallback(save_freq=n_steps*20, save_path='./checkpoints-1000-v20/', verbose=2)
 
     shared_net = [128]
     vf = [128]
@@ -105,6 +106,6 @@ if __name__ == '__main__':
 
     model.learn(total_timesteps=n_steps*1000, callback=checkpoint_callback)
     
-    model.save('model_1000_baselines_v17')
-    env.save('env_1000_baselines_v17')
+    model.save('model_1000_baselines_v20')
+    env.save('env_1000_baselines_v20')
 

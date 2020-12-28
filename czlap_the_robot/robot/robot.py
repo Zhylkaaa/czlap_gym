@@ -4,7 +4,7 @@ import yaml
 import pybullet as p
 import pybullet_data
 from pybullet_utils.bullet_client import BulletClient
-from typing import Tuple, Optional
+from typing import Tuple, Optional, Union
 from czlap_the_robot.robot.motor_controller import Controller
 
 from simple_pid import PID
@@ -42,8 +42,8 @@ class Robot:
             bullet_client: BulletClient,
             urdf_path: str,
             props_path: str,
-            xyz: Optional[Tuple[float, float, float]] = (0, 0, 0),
-            rpy: Optional[Tuple[float, float, float]] = (0, 0, 0),
+            xyz: Optional[Union[Tuple[float, float, float], np.ndarray]] = (0, 0, 0),
+            rpy: Optional[Union[Tuple[float, float, float], np.ndarray]] = (0, 0, 0),
             control_mode: Optional[int] = p.POSITION_CONTROL,
             start_pos: Optional[np.array] = None
     ):

@@ -29,11 +29,11 @@ if __name__ == '__main__':
 
     env = VecFrameStack(env, n_stack=1)
 
-    model = PPO.load('./checkpoints-1000-v17/rl_model_1971200_steps')
-    #model = PPO.load('model_1000_baselines_v16')
+    model = PPO.load('./checkpoints-2000-v12/rl_model_8377600_steps')
+    #model = PPO.load('model_1000_baselines_v19')
 
-    env = VecNormalize.load('./checkpoints-1000-v17/rl_env_1971200_steps', env)
-    #env = VecNormalize.load('env_1000_baselines_v16', env)
+    env = VecNormalize.load('./checkpoints-2000-v12/rl_env_8377600_steps', env)
+    #env = VecNormalize.load('env_1000_baselines_v19', env)
 
     obs = env.reset()
     rews = []

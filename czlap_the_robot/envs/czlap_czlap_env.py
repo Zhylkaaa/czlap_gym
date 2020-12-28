@@ -19,7 +19,7 @@ class CzlapCzlapEnv(gym.Env):
     metadata = {'render.modes': ['human']}
 
     def __init__(self, simulation_step=1./2000., control_freq=1/10., real_time=0):
-        self._client = bc.BulletClient(connection_mode=p.GUI)
+        self._client = bc.BulletClient(connection_mode=p.DIRECT)
         self._client.setGravity(0, 0, -9.81)
         self.simulation_step = simulation_step
         self._client.setTimeStep(simulation_step)
@@ -32,11 +32,10 @@ class CzlapCzlapEnv(gym.Env):
         robot_path = os.path.join(dirname, '../urdf/robot.urdf')
         props_path = os.path.join(dirname, '../urdf/config/props.yaml')
 
-        self.start_rpy = (0., 0., np.pi/2)
-        self.initial_position = self.start_xyz = (0., 0., 0.25)
+        self.start_rpy = np.array((0., 0., np.pi/2))
+        self.initial_position = self.start_xyz = np.array((0., 0., 0.25))
 
         self.robot = Robot(self._client, robot_path, props_path, xyz=self.start_xyz, rpy=self.start_rpy)
-
 
         self.joint_pos_lower_limits = self.robot.joint_pos_lower_limits
         self.joint_pos_upper_limits = self.robot.joint_pos_upper_limits
@@ -75,7 +74,8 @@ class CzlapCzlapEnv(gym.Env):
         self.np_random, _ = gym.utils.seeding.np_random()
         self.time_reward = 0.01  # TODO: make it time punishment?
         self.done = False
-        self.turn_additional_punishment = False
+        self.turn_additional_punishment = True
+        self.completion_counter = 0
 
     def get_observations(self):
         observations = np.concatenate([self.robot.get_joint_pos_vel_array(),
@@ -91,31 +91,38 @@ class CzlapCzlapEnv(gym.Env):
         if y_dist_traveled > 0:
             y_dist_traveled *= 2
 
-        y_dist_from_origin = 0.0005 * np.float32(new_pos_and_rpy[1] - self.initial_position[1])
+        y_dist_from_origin = np.float32(new_pos_and_rpy[1] - self.initial_position[1])
 
-        tolerance = 0.03
-        height_punishment = new_pos_and_rpy[2] - (old_pos_and_rpy[2] - tolerance)
-        if height_punishment > 0:
+        height_punishment = new_pos_and_rpy[2] - old_pos_and_rpy[2]
+        if np.abs(1 - new_pos_and_rpy[2] / old_pos_and_rpy[2]) <= 0.03:
             height_punishment = 0
 
+        x_deviation_punishment = -np.abs(new_pos_and_rpy[0] - self.initial_position[0])
+        # return y_dist_traveled + y_dist_from_origin + self.time_reward
+
+        roll_punishment, pitch_punishment, yaw_punishment = -np.abs(new_pos_and_rpy[3:] - self.start_rpy)
+
         if self.turn_additional_punishment:
-            height_weight = 0.0001
-            x_weight = 0.0001
-            yaw_weight = 0.002
+            roll_weight = 0.01
+            pitch_weight = 0.01
+            yaw_weight = 0.02
+            height_weight = 0.02
+            x_weight = 0.01
+            dist_from_origin_weight = 0
         else:
-            height_weight = 0
+            roll_weight = 0.0005
+            pitch_weight = 0.0005
+            yaw_weight = 0.002  # 0.006
+            height_weight = 0  #0.001
             x_weight = 0
-            yaw_weight = 0
+            dist_from_origin_weight = 0.0005
 
-        x_deviation_punishment = -np.abs(new_pos_and_rpy[0] - old_pos_and_rpy[0])
-        #return y_dist_traveled + y_dist_from_origin + self.time_reward
-
-        yaw_punishment = -np.abs(new_pos_and_rpy[5] - old_pos_and_rpy[5])
-
-        # time seems to improve results ~\_(0_0)_/~
-        return y_dist_traveled + y_dist_from_origin + \
+        return y_dist_traveled + \
+                   dist_from_origin_weight * y_dist_from_origin + \
                    height_weight * height_punishment + \
                    x_weight * x_deviation_punishment + \
+                   roll_weight * roll_punishment + \
+                   pitch_weight * pitch_punishment + \
                    yaw_weight * yaw_punishment
 
     def perform_simulation(self):
@@ -168,7 +175,9 @@ class CzlapCzlapEnv(gym.Env):
             self.done = True
             reward -= 1.
         elif position_and_rpy[1] >= 5.:
-            self.turn_additional_punishment = False
+            self.completion_counter += 1
+            if self.completion_counter >= 50:
+                self.turn_additional_punishment = True
             reward += 1.
             self.done = True
 
@@ -193,7 +202,6 @@ class CzlapCzlapEnv(gym.Env):
         self.last_action = np.zeros_like(self.action_space.low)
 
         self.done = False
-        self.turn_additional_punishment = False
 
         return self.get_observations()
 
