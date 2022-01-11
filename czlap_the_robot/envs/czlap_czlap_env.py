@@ -30,7 +30,7 @@ class CzlapCzlapEnv(gym.Env):
 
         dirname = os.path.dirname(__file__)  # is it portable solution?
         robot_path = os.path.join(dirname, '../urdf/robot.urdf')
-        props_path = os.path.join(dirname, '../urdf/config/props.yaml')
+        props_path = os.path.join(dirname, '../urdf/props.yaml')
 
         self.start_rpy = np.array((0., 0., np.pi/2))
         self.initial_position = self.start_xyz = np.array((0., 0., 0.25))
@@ -186,7 +186,7 @@ class CzlapCzlapEnv(gym.Env):
     def reset(self):
         self.robot._reset_actuator_joints()
         self.robot.reset_position()
-        self.robot.set_joint_array(self.robot._start_joint_pos, np.zeros((12,)))
+        self.robot.set_joint_array(self.robot._start_joint_pos)
         self.perform_simulation()
         self.last_position_and_rpy = self.robot.get_body_pos_and_rpy()
 
