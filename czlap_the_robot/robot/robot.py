@@ -5,9 +5,7 @@ import pybullet as p
 import pybullet_data
 from pybullet_utils.bullet_client import BulletClient
 from typing import Tuple, Optional, Union
-from czlap_the_robot.robot.motor_controller import Controller
 
-from simple_pid import PID
 
 class Robot:
     """
@@ -60,15 +58,12 @@ class Robot:
         self._femur_link_len = None
         self._tibia_link_len = None
 
-        self._joints_array = [2,  4,  6,
-                              8,  10, 12,
-                              14, 16, 18,
-                              20, 22, 24]
+        self._joints_array = np.arange(12)
 
         self._control_mode = control_mode
         self._start_joint_pos = None
         if start_pos is None:
-            self._start_joint_pos = np.array([0.0, np.pi / 4, np.pi / 2] * 4)
+            self._start_joint_pos = np.array([0.0, -np.pi/4, np.pi/2] * 4)
         else:
             self._start_joint_pos = np.array(start_pos)
 
@@ -79,12 +74,14 @@ class Robot:
         quaternion = self._bc.getQuaternionFromEuler(self._start_rpy)
         self._robot_id = self._bc.loadURDF(fileName=self._urdf_path,
                                            basePosition=self._start_xyz,
-                                           baseOrientation=quaternion)
+                                           baseOrientation=quaternion,
+                                           useFixedBase=False,
+                                           flags=self._bc.URDF_MERGE_FIXED_LINKS |  \
+                                                 self._bc.URDF_USE_INERTIA_FROM_FILE)
         self._import_props()
         self._reset_actuator_joints()
         self.reset_position()
-        # self._set_mimic_joints()
-        self.set_joint_array(self._start_joint_pos, np.zeros((12,)))
+        self.set_joint_array(self._start_joint_pos)
 
     def _import_props(self):
         """Read robot physical parameters"""
@@ -94,9 +91,22 @@ class Robot:
             except yaml.YAMLError as exc:
                 print(exc)
 
-        self._coxa_link_len = self._robot_data['coxa']['joint']['origin']['x']
-        self._femur_link_len = self._robot_data['femur']['joint']['origin']['x']
-        self._tibia_link_len = self._robot_data['tibia']['joint']['origin']['x']
+        self._coxa_link_len = self._robot_data['coxa']['link']['length']
+        self._femur_link_len = self._robot_data['femur']['link']['length']
+        self._tibia_link_len = self._robot_data['tibia']['link']['length']
+
+        self._joint_torques = np.array([
+            self._robot_data['coxa']['actuator']['effort'],
+            self._robot_data['femur']['actuator']['effort'],
+            self._robot_data['tibia']['actuator']['effort']
+        ] * 4)
+
+        self._joint_velocities = np.array([
+            self._robot_data['coxa']['actuator']['velocity'],
+            self._robot_data['femur']['actuator']['velocity'],
+            self._robot_data['tibia']['actuator']['velocity']
+        ] * 4)
+
         self._link_len_arr = np.array([self._coxa_link_len, self._femur_link_len, self._tibia_link_len])
 
 
@@ -109,64 +119,6 @@ class Robot:
                                            force=0)
             self._bc.changeDynamics(self._robot_id, i, linearDamping=0, angularDamping=0)
 
-
-    def _set_mimic_joints(self):
-        """Have no fucking clue"""
-        joint_num_map = {'coxa': (2, 1), 'femur': (4, 3), 'tibia': (6, 5)}
-        for i in range(4):
-            for joint in self.joint_names:
-                c = self._bc.createConstraint(parentBodyUniqueId=self._robot_id,
-                                              parentLinkIndex=joint_num_map[joint][0] + i * 6,
-                                              childBodyUniqueId=self._robot_id,
-                                              childLinkIndex=joint_num_map[joint][1] + i * 6,
-                                              jointType=p.JOINT_GEAR,
-                                              jointAxis=[1, 0, 0],
-                                              parentFramePosition=[0, 0, 0],
-                                              childFramePosition=[0, 0, 0])
-                gear_ratio = 1 / self._robot_data[joint]['actuator']['gear_ratio']
-                if joint == 'coxa' and i >= 2:
-                    gear_ratio *= -1
-                elif joint == 'femur':
-                    if i % 2 == 0:
-                        gear_ratio *= -1
-                    if i >= 2:
-                        gear_ratio *= -1
-                elif joint == 'tibia' and i % 2 == 0:
-                    gear_ratio *= -1
-                self._bc.changeConstraint(c, gearRatio=gear_ratio, maxForce=10000)
-
-    def _single_leg_inv_kinematicks(self, xyz):
-        """
-        Get single leg tip position relative to coxa base
-        in [x, y, z] coordinates.
-
-        Returns:
-            np.array: [coxa_angle, femur_angle, tibia_angle]
-            angles are in radians
-        """
-
-        assert np.linalg.norm(xyz) <= np.linalg.norm([self._link_len_arr[0], self._link_len_arr[1]+self._link_len_arr[2]])
-
-        pow_xyz = np.power(xyz, 2)
-        pow_link_len_arr = np.power(self._link_len_arr, 2)
-
-        tibia_angle_num = np.sum(pow_xyz) - np.sum(pow_link_len_arr)
-        tibia_angle_den = 2 * self._link_len_arr[1] * self._link_len_arr[2]
-
-        # helping variables for future equations
-        r = tibia_angle_num / tibia_angle_den       # cos(tibia_angle)
-        q = 1 - r**2                                # sin(tibia_angle)**2
-
-        tibia_angle = np.arccos(r) 
-        
-
-        femur_angle_den = (self._link_len_arr[1] + self._link_len_arr[2]*r)**2 + pow_link_len_arr[2]*q
-        femur_angle_num = -xyz[0]*(self._link_len_arr[1]+r) - np.sqrt(pow_xyz[0]*(self._link_len_arr[1]+r)**2 + pow_link_len_arr[2]*q * femur_angle_den) 
-
-        femur_angle = np.arccos(femur_angle_num/femur_angle_den)
-
-        coxa_angle = np.pi/2 - np.arccos((self._link_len_arr[2]*(np.cos(tibia_angle)*np.sin(femur_angle) + np.cos(femur_angle)*np.sin(tibia_angle)) + self._link_len_arr[1]*np.sin(femur_angle)) / self._link_len_arr[0])
-        return [coxa_angle, femur_angle-np.pi/2, tibia_angle]
 
     def get_body_pos_and_rpy(self):
         """
@@ -216,7 +168,7 @@ class Robot:
 
         return np.concatenate((joint_position, joint_velocity), axis=0).astype(np.float32)
 
-    def set_joint_array(self, target_positions, target_velocities=None):
+    def set_joint_array(self, target_positions):
         """
         Set joints next position
 
@@ -226,25 +178,13 @@ class Robot:
         """
         assert np.shape(target_positions) == np.shape(self._joints_array)
 
-        remapped_target_positions = np.copy(target_positions)
-        remapped_target_positions[[1, 4]] = np.pi - target_positions[[1, 4]]
-        remapped_target_positions[[2, 3, 5, 8, 9, 11]] = -target_positions[[2, 3, 5, 8, 9, 11]]
-
-        remapped_target_velocities = None
-        if target_velocities is None:
-            remapped_target_velocities = self.max_vel_limits
-        else:
-            assert np.shape(target_velocities) == np.shape(self._joints_array)
-            remapped_target_velocities = np.copy(target_velocities)
-            remapped_target_velocities[[1, 2, 3, 4, 5, 8, 9, 11]] = -target_velocities[[1, 2, 3, 4, 5, 8, 9, 11]]
-
-        for i in range(len(self._joints_array)):
+        for i in range(12):
             self._bc.setJointMotorControl2(bodyUniqueId=self._robot_id,
-                                           jointIndex=self._joints_array[i],
+                                           jointIndex=i,
                                            controlMode=self._control_mode,
-                                           targetPosition=remapped_target_positions[i],
-                                           maxVelocity=10,
-                                           force=12)        # TODO Read thius stuff from URDF or YAML
+                                           targetPosition=target_positions[i],
+                                           maxVelocity=self._joint_velocities[i],
+                                           force=self._joint_torques[i])
 
 
     def reset_position(self, target_position=None):
@@ -280,8 +220,7 @@ class Robot:
     @property
     def max_vel_limits(self):
         """Joint velocities limits (total of 12 values)"""
-        max_vel_array = np.array([self._robot_data[joint]['actuator']['velocity'] /
-                                  self._robot_data[joint]['actuator']['gear_ratio'] for joint in self.joint_names] * 4,
+        max_vel_array = np.array([self._robot_data[joint]['actuator']['velocity'] for joint in self.joint_names] * 4,
                                  dtype=np.float32)
         return max_vel_array
 
@@ -290,14 +229,13 @@ class Robot:
         """Joint positions upper limits (total of 12 values)"""
         joints_limit_up = np.array(
             [self._robot_data[joint]['joint']['limit']['upper'] for joint in self.joint_names] * 4, dtype=np.float32)
-        joints_limit_up = np.deg2rad(joints_limit_up)
-
+        joints_limit_up = joints_limit_up
         return joints_limit_up
 
     @property
     def joint_pos_lower_limits(self):
         joints_limit_low = np.array(
             [self._robot_data[joint]['joint']['limit']['lower'] for joint in self.joint_names] * 4, dtype=np.float32)
-        joints_limit_low = np.deg2rad(joints_limit_low)
+        joints_limit_low = joints_limit_low
 
         return joints_limit_low

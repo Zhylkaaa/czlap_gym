@@ -8,6 +8,5 @@ setup(
                       'numpy',
                       'matplotlib',
                       'torch',
-                      'pyyaml',
-                      'simple_pid']
+                      'pyyaml']
 )
