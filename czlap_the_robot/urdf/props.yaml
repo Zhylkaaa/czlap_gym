@@ -1,0 +1,37 @@
+coxa:
+  link:
+    length: 0.03
+    radius: 0.03
+  joint:
+    limit:
+      lower: -0.785398163
+      upper: +0.785398163
+  actuator:
+    velocity: 35
+    effort: 45
+
+
+femur:
+  link:
+    length: 0.16
+    radius: 0.03
+  joint:
+    limit:
+      lower: -2.356194490
+      upper: +1.570796327
+  actuator:
+    velocity: 35
+    effort: 45
+
+
+tibia:
+  link:
+    length: 0.16
+    radius: 0.03
+  joint:
+    limit:
+      lower: +0.000000000
+      upper: +3.141592654
+  actuator:
+    velocity: 35
+    effort: 45
